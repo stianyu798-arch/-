@@ -1,0 +1,29 @@
+:root {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'SF Pro Text',
+    'Segoe UI', sans-serif;
+  font-size: 16px;
+  line-height: 1.4;
+  color-scheme: dark;
+}
+
+html {
+  height: 100%;
+}
+
+/*
+ * 视口自适应：height:100% 参与百分比链；min-height:100dvh 覆盖移动/动态工具栏场景。
+ */
+body {
+  height: 100%;
+  min-height: 100dvh;
+  margin: 0;
+  /* 整页不滚动；主区 main 使用 overflow-y:auto，仅溢出时出现滚动条 */
+  overflow: hidden;
+}
+
+#root {
+  height: 100%;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
