@@ -6,6 +6,17 @@
 
 ---
 
+## 2026-04-10 · 困难算法（参考 Py 文档）
+
+### `src/ai/engine.ts`（困难档搜索链）
+
+- 叶节点可选 **文档式全局评估**：`evaluate_board(白) − evaluate_board(黑)`，按线匹配冲四/活三/眠三等子串（与提供的 Python 示例一致），并 **`DOC_GLOBAL_EVAL_SCALE`** 压幅以配合 α-β 剪枝。
+- **走子排序**：与文档 `quick_score_move` 一致，对候选按「落子后 `evaluate_board(该方)`」降序，提升剪枝效率。
+- **候选范围**：困难搜索使用 **`radius=2`**（与文档 `get_candidate_moves(radius=2)` 一致）；简单/普通/入口 `chooseAIMove` 仍用原半径。
+- 仍保留 **必堵阈值**、**MC hybrid**、**普通档** 原有点估值 minimax（未改用文档叶节点）。
+
+---
+
 ## 2026-04-10 · UI 与困难档 AI
 
 ### 「关于本作」弹窗

@@ -34,7 +34,7 @@
 
 - **简单档**：必胜/必防之后，对候选点按静态估值做 **softmax 抽样**（温度见源码 `EASY_SOFTMAX_TEMPERATURE`）。
 - **普通档**：**α-β**（`pickBestMoveMinimax(board, 3)`），叶节点估值略偏防守（对方好点 ×1.08）。
-- **困难档**：强候选经 **α-β**（加深）筛选后，在根节点做多局 **随机 rollout**（`pickBestMoveHardHybrid`）；搜索链上**降低对方威胁权重、略抬高己方好点**，且**仅对对方冲四级以上**仍「一步必堵」，避免过度封堵、便于连续进攻；**无**神经网络。
+- **困难档**：强候选经 **α-β**（加深）筛选后，在根节点做多局 **随机 rollout**（`pickBestMoveHardHybrid`）；叶节点可选用与参考实现一致的 **全盘线型差分**评估 + **quick 排序** + **邻域候选半径 2**；并保留**仅对对方极强点一步必堵**等取舍；**无**神经网络。
 - **参考仓库**：[gomoku_rl](https://github.com/guokezhen999/gomoku_rl)（深度强化学习方向，Python/PyTorch）；[gobang](https://github.com/lihongxun945/gobang)（经典 α-β，JavaScript）。与本作前端实现独立，见应用内「关于本作」。
 
 ---

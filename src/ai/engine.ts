@@ -5,7 +5,8 @@
  * 难度设计参考常见博弈 AI 文献与开源实践（如极小化极大 + α-β、静态估值指数权重、弱棋力下的随机策略）：
  * - 简单：必胜/必防后，对候选点按局面启发分做 **softmax 温度采样**（随机策略，类似带温度的策略分布，非均匀瞎走）。
  * - 普通：**α-β**，根下搜索深度介于入门与困难之间（见 pickBestMoveMinimax 层数）。
- * - 困难：α-β + 根节点 MC；必堵仅冲四级以上，活三交搜索；叶节点己方加权、对方降权，hybrid 加深一层。
+ * - 困难：参考「五子棋困难算法 Py」doc：α-β + 根 MC；叶节点可用 **全局线型评估**（evaluate 白 − evaluate 黑）；
+ *   候选 **radius=2**、走子 **quick_score** 排序；仍保留必堵阈值与 MC。
  */
 
 export type Cell = 0 | 1 | 2
@@ -89,6 +90,116 @@ function evaluateLine(line: Cell[], who: Player, opp: Player) {
   }
   return best
 }
+
+/* ---------- 困难档参考：文档 Python 版「整条线棋型 + 全局差分」评估（与邻域 max 点估值独立） ---------- */
+
+/** 单条线字符串（1=该方，2=对方，0=空）按文档表给分 */
+function evaluateLineDocStyle(strLine: string): number {
+  if (strLine.includes('11111')) return 1_000_000
+  if (strLine.includes('011110')) return 50_000
+  let score = 0
+  const patterns: [string, number][] = [
+    ['11101', 8000],
+    ['11011', 8000],
+    ['10111', 8000],
+    ['11110', 8000],
+    ['01110', 2000],
+    ['011010', 2000],
+    ['010110', 2000],
+    ['011100', 800],
+    ['001110', 800],
+    ['011000', 800],
+    ['001100', 200],
+    ['010100', 200],
+    ['000100', 0],
+  ]
+  for (const [p, v] of patterns) {
+    if (strLine.includes(p)) score += v
+  }
+  const blocked = ['211110', '011112', '211101', '210111', '211011']
+  for (const p of blocked) {
+    if (strLine.includes(p)) score += 4000
+  }
+  return score
+}
+
+function evaluateBoardForColor(board: Cell[], color: Player): number {
+  const opponent: Player = color === 1 ? 2 : 1
+  let total = 0
+
+  for (let y = 0; y < BOARD_SIZE; y++) {
+    const lineColor: number[] = []
+    for (let x = 0; x < BOARD_SIZE; x++) {
+      const c = board[indexOf(x, y)]
+      lineColor.push(c === color ? 1 : c === opponent ? 2 : 0)
+    }
+    total += evaluateLineDocStyle(lineColor.join(''))
+  }
+
+  for (let x = 0; x < BOARD_SIZE; x++) {
+    const lineColor: number[] = []
+    for (let y = 0; y < BOARD_SIZE; y++) {
+      const c = board[indexOf(x, y)]
+      lineColor.push(c === color ? 1 : c === opponent ? 2 : 0)
+    }
+    total += evaluateLineDocStyle(lineColor.join(''))
+  }
+
+  for (let k = -BOARD_SIZE + 1; k < BOARD_SIZE; k++) {
+    const lineColor: number[] = []
+    for (let i = 0; i < BOARD_SIZE; i++) {
+      const j = i - k
+      if (j >= 0 && j < BOARD_SIZE) {
+        const c = board[indexOf(i, j)]
+        lineColor.push(c === color ? 1 : c === opponent ? 2 : 0)
+      }
+    }
+    if (lineColor.length >= 5) total += evaluateLineDocStyle(lineColor.join(''))
+  }
+
+  for (let k = 0; k < 2 * BOARD_SIZE - 1; k++) {
+    const lineColor: number[] = []
+    for (let i = 0; i < BOARD_SIZE; i++) {
+      const j = k - i
+      if (j >= 0 && j < BOARD_SIZE) {
+        const c = board[indexOf(i, j)]
+        lineColor.push(c === color ? 1 : c === opponent ? 2 : 0)
+      }
+    }
+    if (lineColor.length >= 5) total += evaluateLineDocStyle(lineColor.join(''))
+  }
+
+  return total
+}
+
+/** 文档 evaluate()：AI(2) 全盘得分 − 玩家(1) 全盘得分 */
+function evaluateGlobalDiff(board: Cell[]): number {
+  return evaluateBoardForColor(board, 2) - evaluateBoardForColor(board, 1)
+}
+
+const MM_WIN = 8_000_000
+const MM_LOSS = -8_000_000
+
+/** 与文档 quick_score_move 一致：落子后若胜则极大分，否则 evaluate_board(该方) */
+function quickScoreMove(board: Cell[], x: number, y: number, player: Player): number {
+  const idx = indexOf(x, y)
+  if (board[idx] !== 0) return MM_LOSS
+  const nb = board.slice()
+  nb[idx] = player
+  if (checkWin(nb, x, y, player)) return MM_WIN
+  return evaluateBoardForColor(nb, player)
+}
+
+function sortMovesByQuickScore(moves: ScoredMove[], board: Cell[], player: Player): ScoredMove[] {
+  return moves.slice().sort((a, b) => {
+    const sa = quickScoreMove(board, a.x, a.y, player)
+    const sb = quickScoreMove(board, b.x, b.y, player)
+    return sb - sa
+  })
+}
+
+/** 将全局差分压到与 MM 终端可比的数量级，避免叶值溢出剪枝比较 */
+const DOC_GLOBAL_EVAL_SCALE = 1 / 96
 
 export function evaluateBoardAt(board: Cell[], x: number, y: number, who: Player): ScoredMove {
   const idx = indexOf(x, y)
@@ -258,9 +369,6 @@ function staticEvalForAI(
   return myBest * myScoreBoost - opBest * oppThreatWeight
 }
 
-const MM_WIN = 8_000_000
-const MM_LOSS = -8_000_000
-
 function minimaxAB(
   b: Cell[],
   depth: number,
@@ -269,13 +377,30 @@ function minimaxAB(
   beta: number,
   oppThreatWeight = 1.08,
   myScoreBoost = 1,
+  useDocGlobalLeaf = false,
+  candidateRadius = 3,
 ): number {
-  if (depth === 0) return staticEvalForAI(b, oppThreatWeight, myScoreBoost)
+  if (depth === 0) {
+    if (useDocGlobalLeaf) {
+      const g = evaluateGlobalDiff(b)
+      const v = g * DOC_GLOBAL_EVAL_SCALE
+      return Math.max(MM_LOSS / 2, Math.min(MM_WIN / 2, v))
+    }
+    return staticEvalForAI(b, oppThreatWeight, myScoreBoost)
+  }
 
   const player: Player = aiTurn ? 2 : 1
   const branch = depth >= 3 ? 9 : depth >= 2 ? 11 : 13
-  const moves = generateMoveCandidates(b, player, 3, branch)
-  if (!moves.length) return staticEvalForAI(b, oppThreatWeight, myScoreBoost)
+  let moves = generateMoveCandidates(b, player, candidateRadius, branch)
+  if (useDocGlobalLeaf) moves = sortMovesByQuickScore(moves, b, player)
+  if (!moves.length) {
+    if (useDocGlobalLeaf) {
+      const g = evaluateGlobalDiff(b)
+      const v = g * DOC_GLOBAL_EVAL_SCALE
+      return Math.max(MM_LOSS / 2, Math.min(MM_WIN / 2, v))
+    }
+    return staticEvalForAI(b, oppThreatWeight, myScoreBoost)
+  }
 
   const tieDepth = (4 - depth) * 120
 
@@ -286,7 +411,17 @@ function minimaxAB(
       const i = indexOf(m.x, m.y)
       nb[i] = player
       if (checkWin(nb, m.x, m.y, 2)) return MM_WIN - tieDepth
-      const ev = minimaxAB(nb, depth - 1, false, alpha, beta, oppThreatWeight, myScoreBoost)
+      const ev = minimaxAB(
+        nb,
+        depth - 1,
+        false,
+        alpha,
+        beta,
+        oppThreatWeight,
+        myScoreBoost,
+        useDocGlobalLeaf,
+        candidateRadius,
+      )
       maxEval = Math.max(maxEval, ev)
       alpha = Math.max(alpha, ev)
       if (beta <= alpha) break
@@ -299,7 +434,17 @@ function minimaxAB(
     const nb = b.slice()
     nb[indexOf(m.x, m.y)] = player
     if (checkWin(nb, m.x, m.y, 1)) return MM_LOSS + tieDepth
-    const ev = minimaxAB(nb, depth - 1, true, alpha, beta, oppThreatWeight, myScoreBoost)
+    const ev = minimaxAB(
+      nb,
+      depth - 1,
+      true,
+      alpha,
+      beta,
+      oppThreatWeight,
+      myScoreBoost,
+      useDocGlobalLeaf,
+      candidateRadius,
+    )
     minEval = Math.min(minEval, ev)
     beta = Math.min(beta, ev)
     if (beta <= alpha) break
@@ -307,14 +452,20 @@ function minimaxAB(
   return minEval
 }
 
+/** 与文档一致：只在已有子周围 2 格内扩候选，减少无效分支 */
+const HARD_CANDIDATE_RADIUS = 2
+
 function pickBestMoveMinimax(
   board: Cell[],
   plyDepth: number,
   oppThreatWeight = 1.08,
   myScoreBoost = 1,
+  useDocGlobalLeaf = false,
+  candidateRadius = 3,
 ): ScoredMove | null {
   const ai = 2 as Player
-  const moves = generateMoveCandidates(board, ai, 3, 12)
+  let moves = generateMoveCandidates(board, ai, candidateRadius, 12)
+  if (useDocGlobalLeaf) moves = sortMovesByQuickScore(moves, board, ai)
   if (!moves.length) return null
   let best: ScoredMove = moves[0]!
   let bestScore = MM_LOSS
@@ -323,7 +474,17 @@ function pickBestMoveMinimax(
     const nb = board.slice()
     nb[indexOf(m.x, m.y)] = ai
     if (checkWin(nb, m.x, m.y, ai)) return { ...m, score: 1e12, pattern: '立即成五' }
-    const sc = minimaxAB(nb, plyDepth - 1, false, MM_LOSS, MM_WIN, oppThreatWeight, myScoreBoost)
+    const sc = minimaxAB(
+      nb,
+      plyDepth - 1,
+      false,
+      MM_LOSS,
+      MM_WIN,
+      oppThreatWeight,
+      myScoreBoost,
+      useDocGlobalLeaf,
+      candidateRadius,
+    )
     if (sc > bestScore) {
       bestScore = sc
       best = m
@@ -358,7 +519,8 @@ function pickBestMoveHardHybrid(
   myScoreBoost = HARD_MINIMAX_MY_BOOST,
 ): ScoredMove | null {
   const ai = 2 as Player
-  const moves = generateMoveCandidates(board, ai, 3, 14)
+  let moves = generateMoveCandidates(board, ai, HARD_CANDIDATE_RADIUS, 14)
+  moves = sortMovesByQuickScore(moves, board, ai)
   if (!moves.length) return null
 
   const scored: { m: ScoredMove; sc: number }[] = []
@@ -374,6 +536,8 @@ function pickBestMoveHardHybrid(
       MM_WIN,
       oppThreatWeight,
       myScoreBoost,
+      true,
+      HARD_CANDIDATE_RADIUS,
     )
     scored.push({ m, sc })
   }
@@ -542,6 +706,13 @@ export function chooseAIMove(board: Cell[], difficulty: Difficulty): ScoredMove 
 
   const pick =
     pickBestMoveHardHybrid(board, HARD_MINIMAX_OPP_WEIGHT, HARD_MINIMAX_MY_BOOST) ??
-    pickBestMoveMinimax(board, 5, HARD_MINIMAX_OPP_WEIGHT, HARD_MINIMAX_MY_BOOST)
+    pickBestMoveMinimax(
+      board,
+      5,
+      HARD_MINIMAX_OPP_WEIGHT,
+      HARD_MINIMAX_MY_BOOST,
+      true,
+      HARD_CANDIDATE_RADIUS,
+    )
   return pick ?? candidates[0]
 }

@@ -34,7 +34,7 @@ All game and AI logic runs **in the browser**. **No backend.** **Normal / hard**
 
 - **Easy**: After forced win/block, **softmax sampling** over candidates (temperature in `EASY_SOFTMAX_TEMPERATURE`).
 - **Normal**: **Alpha-beta** with `pickBestMoveMinimax(board, 3)`; leaf eval slightly favors defense (opponent best point ×1.08).
-- **Hard**: **Alpha-beta** (deeper) then root **Monte Carlo rollouts** (`pickBestMoveHardHybrid`); search uses **lower opponent-threat weight** and **higher own-shape weight**; **instant block** mainly when the opponent’s best empty intersection is a **very strong** threat (e.g. open-four class)—weaker threats are decided by search for better **offense**. **No** neural net.
+- **Hard**: **Alpha-beta** (deeper) then root **Monte Carlo rollouts** (`pickBestMoveHardHybrid`); the hard search path can use a **doc-style full-board line pattern diff** at leaves, **move ordering** by quick post-move board score, and **candidate radius 2**, together with the existing **instant-block** threshold and weights. **No** neural net.
 - **External refs**: [gomoku_rl](https://github.com/guokezhen999/gomoku_rl) (deep RL / PyTorch); [gobang](https://github.com/lihongxun945/gobang) (classic alpha-beta, JS). Independent of this frontend—see in-app **About**.
 
 ---
