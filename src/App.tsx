@@ -1870,6 +1870,30 @@ function App() {
     id: number
   } | null>(null)
   const historyCrossfadeSeqRef = useRef(0)
+  /** 取消选中卡片时：短暂保留终局快照并播棋子退场，再清空 */
+  const [historyExitAnim, setHistoryExitAnim] = useState<{ cells: Cell[]; id: number } | null>(null)
+  const historyExitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const historyExitSeqRef = useRef(0)
+
+  useEffect(() => {
+    if (viewMode !== 'history') {
+      setHistoryExitAnim(null)
+      if (historyExitTimerRef.current) {
+        clearTimeout(historyExitTimerRef.current)
+        historyExitTimerRef.current = null
+      }
+    }
+  }, [viewMode])
+
+  useEffect(() => {
+    if (selectedHistoryIndex >= 0) {
+      setHistoryExitAnim(null)
+      if (historyExitTimerRef.current) {
+        clearTimeout(historyExitTimerRef.current)
+        historyExitTimerRef.current = null
+      }
+    }
+  }, [selectedHistoryIndex])
 
   useEffect(() => {
     if (viewMode !== 'history') {
@@ -2244,12 +2268,31 @@ function App() {
     setHistorySelectedIds([])
   }, [])
 
-  /** 取消选中历史卡片：回到「累计对抗」视图，并重置回放状态 */
+  /** 取消选中历史卡片：回到「累计对抗」视图，并重置回放状态；棋盘先播退场再空 */
   const clearHistorySelection = useCallback(() => {
-    setSelectedHistoryIndex(-1)
-    setReplayStep(0)
     setReplayPlaying(false)
-  }, [])
+    setReplayStep(0)
+    const snap =
+      viewMode === 'history' && selectedHistoryIndex >= 0
+        ? historyTargetBoardRef.current
+        : null
+    if (historyExitTimerRef.current) {
+      clearTimeout(historyExitTimerRef.current)
+      historyExitTimerRef.current = null
+    }
+    setSelectedHistoryIndex(-1)
+    if (snap) {
+      historyExitSeqRef.current += 1
+      const id = historyExitSeqRef.current
+      setHistoryExitAnim({ cells: snap.slice(), id })
+      historyExitTimerRef.current = window.setTimeout(() => {
+        historyExitTimerRef.current = null
+        setHistoryExitAnim(null)
+      }, 420)
+    } else {
+      setHistoryExitAnim(null)
+    }
+  }, [viewMode, selectedHistoryIndex])
 
   const deleteSelectedHistoryGames = () => {
     if (historySelectedIds.length === 0) return
@@ -3019,7 +3062,9 @@ function App() {
         viewMode === 'history' && selectedHistoryIndex >= 0 ? replayStep : moves.length
       const colBoard =
         viewMode === 'history' && selectedHistoryIndex < 0
-          ? createEmptyBoard()
+          ? historyExitAnim
+            ? historyExitAnim.cells
+            : createEmptyBoard()
           : viewMode === 'history' && selectedHistoryIndex >= 0
             ? (historyTargetBoard ?? boardFromMoves(moves, step))
             : boardFromMoves(moves, step)
@@ -3329,6 +3374,11 @@ function App() {
                       isLast &&
                       !undoVanish &&
                       !(colMode === 'history' && viewMode === 'history')
+                    const histDeselectExit =
+                      colMode === 'history' &&
+                      viewMode === 'history' &&
+                      historyExitAnim !== null &&
+                      cell !== 0
 
                     const inset = 18
                     const inner = Math.max(0, boardPx - inset * 2)
@@ -3378,7 +3428,7 @@ function App() {
                             <span
                               className={`stone stone-${cell === 1 ? 'black' : 'white'} ${
                                 historyStoneLastClass ? 'stone-last' : ''
-                              }`}
+                              } ${histDeselectExit ? 'history-deselect-stone-out' : ''}`}
                               aria-hidden="true"
                             />
                           ) : null
@@ -3386,7 +3436,7 @@ function App() {
                           <span
                             className={`stone stone-${cell === 1 ? 'black' : 'white'} ${
                               historyStoneLastClass ? 'stone-last' : ''
-                            } ${stoneAfterglowPlay ? 'stone-afterglow' : ''} ${
+                            } ${histDeselectExit ? 'history-deselect-stone-out' : ''} ${stoneAfterglowPlay ? 'stone-afterglow' : ''} ${
                               colMode === 'play' &&
                               viewMode === 'play' &&
                               isLast &&
@@ -4476,7 +4526,7 @@ function App() {
                   </div>
                   <div className="about-meta-row">
                     <dt>创作工具</dt>
-                    <dd>TRAE、DeepSeek、Kimi</dd>
+                    <dd>Cursor、DeepSeek</dd>
                   </div>
                 </dl>
               </div>

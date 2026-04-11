@@ -28,6 +28,11 @@
 - **React 19**, **TypeScript**, **Vite 8** (`@vitejs/plugin-react`)
 - **ESLint** (`typescript-eslint`, React Hooks)
 
+### Tooling
+
+- **Cursor** (editor and AI-assisted development)
+- **DeepSeek** (model-assisted workflow)
+
 All game and AI logic runs **in the browser**. **No backend.** **Normal / hard** AI search runs in a **Web Worker** (`src/ai/ai.worker.ts`); **easy** stays on the main thread. Shared logic lives in `src/ai/engine.ts`: **normal** uses neighborhood-based leaf eval; **hard** can use full-board line-pattern diff plus move ordering / radius-2 candidates (see **Hard** above).
 
 ### AI notes & references
