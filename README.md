@@ -61,7 +61,7 @@
 | **普通** | `pickBestMoveMinimax(board, 3)`；叶估值略偏防守（对方好点 ×1.08）。 |
 | **困难** | `pickBestMoveHardHybrid`：α-β 与根节点 MC rollout 等组合；可走全盘线型差分叶节点、quick 排序、候选半径 2 等路径。 |
 
-**外部参考（与本仓库实现相互独立）**：[gomoku_rl](https://github.com/guokezhen999/gomoku_rl)（强化学习 / PyTorch）、[gobang](https://github.com/lihongxun945/gobang)（经典 α-β，JavaScript）。更多说明见应用内「关于本作」。
+**外部参考**：[gomoku_rl](https://github.com/guokezhen999/gomoku_rl)（强化学习 / PyTorch）、[gobang](https://github.com/lihongxun945/gobang)（经典 α-β，JavaScript）。更多说明见应用内「关于本作」。
 
 ---
 
