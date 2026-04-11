@@ -52,6 +52,7 @@
 - **侧栏（`src/App.tsx` + `src/ai/engine.ts`）**：AI 落子的分数与招式名改用 **`evaluateBoardAtForUi`**（仅统计己方连线棋形，不含「阻断·…」），与黑方 `evaluateBoardAt` 同一启发尺度，避免搜索返回的极大叶值与误标「封堵」。
 - **引擎**：新增 **`evaluateLineSelfOnly`**；**`evaluateLine`** 先己方再封堵；导出 **`evaluateBoardAtForUi`** 专供 UI。
 - **胜负连线（`src/App.tsx` + `src/App.css`）**：终局 **`colDisplayWinLine`** 优先使用落子时写入的 **`winLine`**；白方胜时增加 **`win-grad-*-onlight`** 渐变（蓝 → 紫 → 靛，避免浅色端叠在白子上发虚），五连白子用同系靛紫描边；白方胜连线层 **z-index** 略抬高。
+- **胜负连线（加固）**：棋谱坐标 **`clampCoord`** + **`indexOf` 强制数值**，避免 JSON 串坐标与 `y*15+x` 拼串错位；**`resolveDisplayWinLine`** 校验存档 **`winLine` 与终局盘面一致**，否则从盘面反推，减少白方胜后「有时不画线」。
 
 ### 历史查看
 

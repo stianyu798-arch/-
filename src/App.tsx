@@ -98,7 +98,9 @@ function boardFromMoves(moves: MoveRecord[], step: number): Cell[] {
   const upto = Math.max(0, Math.min(step, moves.length))
   for (let i = 0; i < upto; i++) {
     const m = moves[i]
-    b[indexOf(m.x, m.y)] = m.player
+    const x = clampCoord(m.x)
+    const y = clampCoord(m.y)
+    b[indexOf(x, y)] = m.player
   }
   return b
 }
@@ -110,8 +112,15 @@ function boardsEqual(a: Cell[], b: Cell[]): boolean {
   return true
 }
 
+/** localStorage / JSON 可能把坐标存成字符串；与 number 混算会拼成错误索引，导致盘面与棋谱错位、无法反推五连 */
+function clampCoord(n: unknown): number {
+  const v = typeof n === 'number' ? n : Number(n)
+  if (!Number.isFinite(v)) return 0
+  return Math.max(0, Math.min(BOARD_SIZE - 1, Math.round(v)))
+}
+
 function indexOf(x: number, y: number): number {
-  return y * BOARD_SIZE + x
+  return Number(y) * BOARD_SIZE + Number(x)
 }
 
 function inBounds(x: number, y: number): boolean {
@@ -170,15 +179,61 @@ function findWinningLineForPlayer(
   player: Player,
   lastMove?: { x: number; y: number } | null,
 ): [number, number][] | null {
+  const lx = lastMove ? clampCoord(lastMove.x) : NaN
+  const ly = lastMove ? clampCoord(lastMove.y) : NaN
   if (
     lastMove &&
-    inBounds(lastMove.x, lastMove.y) &&
-    board[indexOf(lastMove.x, lastMove.y)] === player
+    Number.isFinite(lx) &&
+    Number.isFinite(ly) &&
+    inBounds(lx, ly) &&
+    board[indexOf(lx, ly)] === player
   ) {
-    const w = checkWin(board, lastMove.x, lastMove.y, player)
+    const w = checkWin(board, lx, ly, player)
     if (w) return w.line
   }
   return findWinningLineFromBoard(board, player)
+}
+
+function normalizeWinLine(raw: unknown): [number, number][] {
+  if (!Array.isArray(raw)) return []
+  const out: [number, number][] = []
+  for (const p of raw) {
+    if (!Array.isArray(p) || p.length < 2) continue
+    out.push([clampCoord(p[0]), clampCoord(p[1])])
+  }
+  return out
+}
+
+function winLineMatchesBoard(
+  board: Cell[],
+  player: Player,
+  line: [number, number][],
+): boolean {
+  if (line.length < 2) return false
+  for (const [x, y] of line) {
+    if (!inBounds(x, y) || board[indexOf(x, y)] !== player) return false
+  }
+  return true
+}
+
+/** 侧栏胜负线：优先校验存档；无效则从终局盘面反推（避免旧存档空 winLine、坐标串化等导致「有时不画线」） */
+function resolveDisplayWinLine(
+  fullBoard: Cell[],
+  winner: Player,
+  lastMove: MoveRecord | null,
+  savedRaw: unknown,
+): [number, number][] {
+  const saved = normalizeWinLine(savedRaw)
+  if (saved.length >= 2 && winLineMatchesBoard(fullBoard, winner, saved)) {
+    return saved
+  }
+  return (
+    findWinningLineForPlayer(
+      fullBoard,
+      winner,
+      lastMove && lastMove.player === winner ? lastMove : null,
+    ) ?? []
+  )
 }
 
 type PatternId =
@@ -3036,18 +3091,9 @@ function App() {
         playBoardCleared || winner === 0
           ? []
           : (() => {
-              /** 终局时优先用落子时写入的 winLine，再推导，避免偶发推导与盘面不同步 */
-              if (winLine.length >= 2) return winLine
               const last =
                 moveHistory.length > 0 ? moveHistory[moveHistory.length - 1]! : null
-              const derived = findWinningLineForPlayer(
-                board,
-                winner,
-                last && last.player === winner ? last : null,
-              )
-              if (derived && derived.length >= 2) return derived
-              const fb = findWinningLineFromBoard(board, winner)
-              return fb ?? []
+              return resolveDisplayWinLine(board, winner, last, winLine)
             })()
       return {
         colBoard,
@@ -3088,19 +3134,7 @@ function App() {
       if (rw !== 0 && step >= moves.length && gVisible) {
         const fb = boardFromMoves(moves, moves.length)
         const last = moves.length > 0 ? moves[moves.length - 1]! : null
-        const saved = gVisible.winLine
-        if (Array.isArray(saved) && saved.length >= 2) {
-          colDisplayWinLine = saved
-        } else {
-          colDisplayWinLine =
-            findWinningLineForPlayer(
-              fb,
-              rw,
-              last && last.player === rw ? last : null,
-            ) ??
-            findWinningLineFromBoard(fb, rw) ??
-            []
-        }
+        colDisplayWinLine = resolveDisplayWinLine(fb, rw, last, gVisible.winLine)
       }
       if (step < moves.length) colDisplayWinLine = []
       const colActiveMoves = moves.slice(0, step)
