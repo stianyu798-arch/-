@@ -47,6 +47,12 @@
 
 ## 2026-04-11
 
+### 人机对弈 · 白方侧栏与胜负连线
+
+- **侧栏（`src/App.tsx` + `src/ai/engine.ts`）**：AI 落子的分数与招式名改用 **`evaluateBoardAtForUi`**（仅统计己方连线棋形，不含「阻断·…」），与黑方 `evaluateBoardAt` 同一启发尺度，避免搜索返回的极大叶值与误标「封堵」。
+- **引擎**：新增 **`evaluateLineSelfOnly`**；**`evaluateLine`** 先己方再封堵；导出 **`evaluateBoardAtForUi`** 专供 UI。
+- **胜负连线（`src/App.tsx` + `src/App.css`）**：终局 **`colDisplayWinLine`** 优先使用落子时写入的 **`winLine`**；白方胜时增加 **`win-grad-*-onlight`** 渐变（蓝 → 紫 → 靛，避免浅色端叠在白子上发虚），五连白子用同系靛紫描边；白方胜连线层 **z-index** 略抬高。
+
 ### 历史查看
 
 - 支持**按本地日期**（`type="date"`）筛选对局，可一键清除日期。

@@ -81,7 +81,8 @@ function fiveOfCharOverlapsIndex(s: string, ch: '1', centerIdx: number): boolean
   return false
 }
 
-function evaluateLine(line: Cell[], who: Player, opp: Player, centerIdx?: number) {
+/** 仅己方连线棋形（不含「阻断·…」），用于侧栏展示，避免把进攻标成封堵 */
+function evaluateLineSelfOnly(line: Cell[], who: Player, opp: Player, centerIdx?: number) {
   const s = line.map((c) => (c === who ? '1' : c === opp ? '2' : '0')).join('')
   let best = { score: 0, pattern: '' }
   for (const p of PATTERN_SCORES) {
@@ -95,6 +96,11 @@ function evaluateLine(line: Cell[], who: Player, opp: Player, centerIdx?: number
     const score = p.self
     if (score > best.score) best = { score, pattern: p.name }
   }
+  return best
+}
+
+function evaluateLine(line: Cell[], who: Player, opp: Player, centerIdx?: number) {
+  let best = evaluateLineSelfOnly(line, who, opp, centerIdx)
   const sOpp = line.map((c) => (c === opp ? '1' : c === who ? '2' : '0')).join('')
   for (const p of PATTERN_SCORES) {
     if (p.pattern.test(sOpp)) {
@@ -241,6 +247,45 @@ export function evaluateBoardAt(board: Cell[], x: number, y: number, who: Player
       if (score > 0) {
         totalScore += score
         if (score > 0 && !bestPattern) bestPattern = pattern
+      }
+    }
+  }
+
+  const center = (BOARD_SIZE - 1) / 2
+  const distCenter = Math.abs(x - center) + Math.abs(y - center)
+  totalScore += Math.max(0, 10 - distCenter)
+
+  return { x, y, score: totalScore, pattern: bestPattern }
+}
+
+/**
+ * 侧栏展示用：与 evaluateBoardAt 同尺度，但只累计己方棋形名/分（无「阻断」），与黑方一手 evaluateBoardAt 一致。
+ */
+export function evaluateBoardAtForUi(board: Cell[], x: number, y: number, who: Player): ScoredMove {
+  const idx = indexOf(x, y)
+  if (board[idx] !== 0) return { x, y, score: -Infinity, pattern: '' }
+  const temp = board.slice()
+  temp[idx] = who
+  const opp: Player = who === 1 ? 2 : 1
+  let totalScore = 0
+  let bestPattern = ''
+
+  for (const [dx, dy] of DIRS) {
+    const line: Cell[] = []
+    let centerIdx = -1
+    for (let offset = -5; offset <= 5; offset++) {
+      const xx = x + dx * offset
+      const yy = y + dy * offset
+      if (inBounds(xx, yy)) {
+        if (xx === x && yy === y) centerIdx = line.length
+        line.push(temp[indexOf(xx, yy)])
+      }
+    }
+    if (line.length >= 5) {
+      const { score, pattern } = evaluateLineSelfOnly(line, who, opp, centerIdx)
+      if (score > 0) {
+        totalScore += score
+        if (!bestPattern) bestPattern = pattern
       }
     }
   }

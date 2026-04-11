@@ -9,7 +9,13 @@ import {
   startTransition,
 } from 'react'
 import { createPortal } from 'react-dom'
-import { chooseAIMove, evaluateBoardAt, pickBestHumanHintMove, type ScoredMove } from './ai/engine'
+import {
+  chooseAIMove,
+  evaluateBoardAt,
+  evaluateBoardAtForUi,
+  pickBestHumanHintMove,
+  type ScoredMove,
+} from './ai/engine'
 import './App.css'
 
 type Cell = 0 | 1 | 2 // 0 empty, 1 player (black), 2 AI (white)
@@ -1525,6 +1531,8 @@ function App() {
   const [importOpponentIntro, setImportOpponentIntro] = useState(false)
   /** 仅「对方在下」后的第一手 AI 落子后再闪「轮到你」，非整盘每步都闪 */
   const pendingYourTurnFlashAfterAiRef = useRef(false)
+  /** 简单档提示光：AI 落子后暂缓算 pickBestHumanHintMove，避免与白子 dropIn 动画（~0.42s）抢主线程帧 */
+  const hintDeferAfterAiUntilRef = useRef(0)
   const difficultyRef = useRef(difficulty)
   difficultyRef.current = difficulty
   const aiWorkerRef = useRef<Worker | null>(null)
@@ -2609,6 +2617,8 @@ function App() {
     const idx = indexOf(x, y)
     if (board[idx] !== 0) return
 
+    hintDeferAfterAiUntilRef.current = 0
+
     /* 「轮到你」大字：落子后渐隐（与 .result-flash.hide 过渡一致），并取消原自动关闭定时器 */
     if (resultFlash?.text === '轮到你' && resultFlash.show) {
       importPatternFlashTimersRef.current.forEach((tid) => window.clearTimeout(tid))
@@ -2650,7 +2660,7 @@ function App() {
     setCurrentPlayer(2)
   }
 
-  // Easy 模式提示：选点较重，放到 idle/下一任务，避免与落子后的绘制抢主线程
+  // Easy 模式提示：选点较重，放到 idle；AI 刚落子后须再延后，避免与白子落子 CSS 动画抢帧
   useEffect(() => {
     if (
       viewMode !== 'play' ||
@@ -2663,27 +2673,30 @@ function App() {
       return
     }
     let cancelled = false
+    let deferTimer: ReturnType<typeof setTimeout> | null = null
+    let runTimer: ReturnType<typeof setTimeout> | null = null
     const run = () => {
       if (cancelled) return
       const pt = pickBestHumanHintMove(board, difficulty)
       setHintTarget(pt)
     }
-    let idleId: number | ReturnType<typeof setTimeout>
-    if (typeof requestIdleCallback !== 'undefined') {
-      idleId = requestIdleCallback(run, { timeout: 140 })
-      return () => {
-        cancelled = true
-        cancelIdleCallback(idleId as number)
-      }
-    }
-    idleId = window.setTimeout(run, 0)
+    const wait = Math.max(0, hintDeferAfterAiUntilRef.current - performance.now())
+    deferTimer = window.setTimeout(() => {
+      deferTimer = null
+      if (cancelled) return
+      runTimer = window.setTimeout(() => {
+        runTimer = null
+        run()
+      }, 0)
+    }, wait)
     return () => {
       cancelled = true
-      clearTimeout(idleId as ReturnType<typeof setTimeout>)
+      if (deferTimer !== null) clearTimeout(deferTimer)
+      if (runTimer !== null) clearTimeout(runTimer)
     }
   }, [board, currentPlayer, difficulty, gameOver, patternImportSession?.phase])
 
-  // AI 落子：简单档主线程；普通/困难在 Worker 中跑 minimax，避免长时间阻塞主线程导致严重卡顿
+  // AI 落子：三档均在 Worker 中跑 chooseAIMove（简单档此前在主线程易卡顿）；Worker 不可用时回退主线程
   useEffect(() => {
     if (viewMode !== 'play' || gameOver || currentPlayer !== 2) return
     if (patternImportSession?.phase === 'simulating') return
@@ -2699,11 +2712,14 @@ function App() {
       const nextBoard = boardSnap.slice()
       nextBoard[idx] = 2
       const win = checkWin(nextBoard, aiMove.x, aiMove.y, 2)
-      const evalForUi = evaluateBoardAt(boardSnap, aiMove.x, aiMove.y, 2)
+      /** 侧栏分/棋形与黑方一致：用落子前局面 + evaluateBoardAtForUi（仅己方棋形），勿用 AI 搜索叶值（如 1e12）或「阻断」误标 */
+      const evalForUi = evaluateBoardAtForUi(boardSnap, aiMove.x, aiMove.y, 2)
       const mult = DIFFICULTY_SCORE_MULTIPLIER[diff]
       const uiScoreDelta = Math.round((evalForUi.score / 100) * mult)
+      const patternLabel = win ? '立即成五' : evalForUi.pattern || '稳健应对'
 
       setBoard(nextBoard)
+      /** 须与 setBoard 同批提交：若延后 setMoveHistory，首帧 isLast 仍指黑子最后一手，白子暂无 .stone-last，下一帧再挂上会导致 drop 动画从 0% 重播，观感像倒放/闪一下 */
       setMoveHistory((prev) => {
         const move: MoveRecord = {
           index: prev.length + 1,
@@ -2711,20 +2727,23 @@ function App() {
           y: aiMove.y,
           player: 2,
           scoreDelta: uiScoreDelta,
-          pattern: win ? evalForUi.pattern || '立即成五' : aiMove.pattern || '稳健应对',
+          pattern: patternLabel,
         }
         return [...prev, move]
       })
-      setBoardKick((k) => (k === 0 ? 1 : 0))
+      /** 勿在此处 setBoardKick：整盘 .board-kick-shell 的 transform/filter 过渡与白子 dropInAiLast 同层叠放易抽搐（人手黑子仍保留 kick） */
       setFocus({ x: aiMove.x, y: aiMove.y })
       if (win) {
         setWinner(2)
         setWinLine(win.line)
       } else {
         setCurrentPlayer(1)
+      }
+      hintDeferAfterAiUntilRef.current = performance.now() + 440
+      if (!win) {
         if (pendingYourTurnFlashAfterAiRef.current) {
           pendingYourTurnFlashAfterAiRef.current = false
-          flashImportYourTurn()
+          queueMicrotask(() => flashImportYourTurn())
         }
       }
     }
@@ -2733,14 +2752,7 @@ function App() {
       raf2 = requestAnimationFrame(() => {
         if (cancelled) return
 
-        if (diff === 'easy') {
-          setAiWorkerBusy(false)
-          const aiMove = chooseAIMove(boardSnap, diff)
-          if (!aiMove) return
-          applyAiMove(aiMove)
-          return
-        }
-
+        /** 简单 / 普通 / 困难 均走 Worker（与主线程解耦）；Worker 不可用时再回退主线程 */
         setAiWorkerBusy(true)
         const worker = aiWorkerRef.current
         const requestId = ++aiWorkerRequestIdRef.current
@@ -2761,8 +2773,8 @@ function App() {
             difficulty: diff,
           })
         } else {
-          const aiMove = chooseAIMove(boardSnap, diff)
           setAiWorkerBusy(false)
+          const aiMove = chooseAIMove(boardSnap, diff)
           if (!aiMove) return
           applyAiMove(aiMove)
         }
@@ -3024,6 +3036,8 @@ function App() {
         playBoardCleared || winner === 0
           ? []
           : (() => {
+              /** 终局时优先用落子时写入的 winLine，再推导，避免偶发推导与盘面不同步 */
+              if (winLine.length >= 2) return winLine
               const last =
                 moveHistory.length > 0 ? moveHistory[moveHistory.length - 1]! : null
               const derived = findWinningLineForPlayer(
@@ -3032,7 +3046,8 @@ function App() {
                 last && last.player === winner ? last : null,
               )
               if (derived && derived.length >= 2) return derived
-              return winLine.length >= 2 ? winLine : []
+              const fb = findWinningLineFromBoard(board, winner)
+              return fb ?? []
             })()
       return {
         colBoard,
@@ -3071,16 +3086,20 @@ function App() {
       const rw = gVisible?.winner ?? 0
       let colDisplayWinLine: [number, number][] = []
       if (rw !== 0 && step >= moves.length && gVisible) {
-        if (gVisible.winLine.length >= 2) colDisplayWinLine = gVisible.winLine
-        else {
-          const fb = boardFromMoves(moves, moves.length)
-          const last = moves.length > 0 ? moves[moves.length - 1]! : null
+        const fb = boardFromMoves(moves, moves.length)
+        const last = moves.length > 0 ? moves[moves.length - 1]! : null
+        const saved = gVisible.winLine
+        if (Array.isArray(saved) && saved.length >= 2) {
+          colDisplayWinLine = saved
+        } else {
           colDisplayWinLine =
             findWinningLineForPlayer(
               fb,
               rw,
               last && last.player === rw ? last : null,
-            ) ?? []
+            ) ??
+            findWinningLineFromBoard(fb, rw) ??
+            []
         }
       }
       if (step < moves.length) colDisplayWinLine = []
@@ -3369,11 +3388,15 @@ function App() {
                         ? undoStoneExit.cells.findIndex((c) => c.x === x && c.y === y)
                         : -1
                     const undoVanish = undoVanishIdx >= 0
-                    /** 历史棋盘不要用 .stone-last：会触发 dropInLast，换卡/crossfade 结束再挂类会再播一次落子动效而闪 */
+                    /** 历史非播放时不用 .stone-last：换卡/crossfade 再挂类会重复播 dropIn 而闪；自动播放 (replayPlaying) 时恢复落子动效 */
                     const historyStoneLastClass =
                       isLast &&
                       !undoVanish &&
-                      !(colMode === 'history' && viewMode === 'history')
+                      !(
+                        colMode === 'history' &&
+                        viewMode === 'history' &&
+                        !replayPlaying
+                      )
                     const histDeselectExit =
                       colMode === 'history' &&
                       viewMode === 'history' &&
@@ -3445,6 +3468,14 @@ function App() {
                                 ? 'stone-ai-drop'
                                 : ''
                             } ${
+                              colMode === 'history' &&
+                              viewMode === 'history' &&
+                              replayPlaying &&
+                              isLast &&
+                              cell === 2
+                                ? 'stone-ai-drop'
+                                : ''
+                            } ${
                               colMode === 'catalog' &&
                               catalogDetailId &&
                               isLast
@@ -3469,16 +3500,19 @@ function App() {
                   const inset = 18
                   const inner = Math.max(0, boardPx - inset * 2)
                   const cellPx = inner / (BOARD_SIZE - 1)
-                  if (colMode === 'history' && viewMode === 'history' && replayStep < replayMoves.length)
-                    return null
+                  /* 未播至终局时 colDisplayWinLine 已为空；勿再用 replayStep 与 replayMoves 比较，避免与 step 不同步 */
                   const sx = inset + d.colDisplayWinLine[0][0] * cellPx
                   const sy = inset + d.colDisplayWinLine[0][1] * cellPx
                   const ex = inset + d.colDisplayWinLine[d.colDisplayWinLine.length - 1][0] * cellPx
                   const ey = inset + d.colDisplayWinLine[d.colDisplayWinLine.length - 1][1] * cellPx
                   const gradId = `win-grad-${colMode}`
+                  /** 白方胜：连线叠在浅色白子上，仍用与 UI 一致的蓝紫靛色，略加深色相以保证可见 */
+                  const gradOnLightId = `${gradId}-onlight`
+                  const aiWin = d.colWinner === 2
+                  const strokeMain = aiWin ? `url(#${gradOnLightId})` : `url(#${gradId})`
                   return (
                     <svg
-                      className="win-line-svg"
+                      className={`win-line-svg ${aiWin ? 'win-line-svg--white-win' : ''}`}
                       width={boardPx}
                       height={boardPx}
                       viewBox={`0 0 ${boardPx} ${boardPx}`}
@@ -3491,26 +3525,34 @@ function App() {
                           <stop offset="55%" stopColor="#8b5cf6" stopOpacity="0.95" />
                           <stop offset="100%" stopColor="#e0e7ff" stopOpacity="0.95" />
                         </linearGradient>
+                        {aiWin ? (
+                          <linearGradient id={gradOnLightId} x1="0" y1="0" x2="1" y2="1">
+                            <stop offset="0%" stopColor="#2563eb" stopOpacity="0.98" />
+                            <stop offset="52%" stopColor="#7c3aed" stopOpacity="0.98" />
+                            <stop offset="100%" stopColor="#6366f1" stopOpacity="0.98" />
+                          </linearGradient>
+                        ) : null}
                       </defs>
                       <line
                         x1={sx}
                         y1={sy}
                         x2={ex}
                         y2={ey}
-                        stroke={`url(#${gradId})`}
-                        strokeWidth="7"
+                        stroke={strokeMain}
+                        strokeWidth={7}
                         strokeLinecap="round"
-                        opacity="0.95"
+                        opacity={aiWin ? 0.98 : 0.95}
+                        className="win-line-main"
                       />
                       <line
                         x1={sx}
                         y1={sy}
                         x2={ex}
                         y2={ey}
-                        stroke={`url(#${gradId})`}
-                        strokeWidth="18"
+                        stroke={strokeMain}
+                        strokeWidth={aiWin ? 20 : 18}
                         strokeLinecap="round"
-                        opacity="0.16"
+                        opacity={aiWin ? 0.22 : 0.16}
                         className="win-line-glow"
                       />
                     </svg>
