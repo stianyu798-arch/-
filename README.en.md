@@ -15,6 +15,36 @@ This project is **frontend-only**: no standalone client and no separate backend�
 
 ---
 
+## About this project
+
+### Motivation
+
+I wanted a browser-based Gomoku UI with a **Liquid Glass** feel: frosted glass, soft lighting, and clear functional zones on a dark canvas, bringing human vs AI, history replay, and pattern study into one view. With simple rules, pattern recognition, multiple difficulty levels, and game replay should feel like a single, smooth workflow—also a hands-on exercise in modern CSS and React state management.
+
+### AI implementation & references
+
+- **Easy**: Defends losing positions seriously, but plays more casually otherwise—sometimes unexpected. This mode includes move hints with highlights—good for newcomers or relaxed games.
+- **Normal**: Deeper and steadier than Easy, stickier on defense; no hints—you judge the position yourself; good for building intuition.
+- **Hard**: Explores multiple candidates to find the best reply; strongest overall and toughest to beat; no hints—for players who want a challenge. See `src/ai/engine.ts`; computation runs in a **Web Worker** to keep the UI responsive.
+
+For **deep reinforcement learning** Gomoku frameworks (MCTS, PPO, policy–value nets, etc.), the community project [guokezhen999/gomoku_rl](https://github.com/guokezhen999/gomoku_rl) (Python / PyTorch) is an independent reference from this repo’s front-end search stack.
+
+Classic **alpha-beta** Gomoku AI and tutorials: [lihongxun945/gobang](https://github.com/lihongxun945/gobang) (JavaScript; traditional search, no neural nets—useful for comparison).
+
+### Date
+
+April 11, 2026
+
+### Author
+
+石天宇 (Shi Tianyu)
+
+### Tools
+
+Cursor, DeepSeek
+
+---
+
 ## Features
 
 ### Human vs AI
@@ -61,7 +91,7 @@ This project is **frontend-only**: no standalone client and no separate backend�
 | **Normal** | `pickBestMoveMinimax(board, 3)`; leaf eval slightly favors defense (opponent best ×1.08). |
 | **Hard** | `pickBestMoveHardHybrid`: alpha-beta plus root MC rollouts; optional doc-style full-board line diff, quick ordering, radius-2 candidates. |
 
-More context on motivation and references: see **About this project** below and the in-app **About** dialog.
+Motivation and external references: see **About this project** (above) and the in-app **About** dialog.
 
 ---
 
@@ -104,36 +134,6 @@ Typical URL: `https://<user>.github.io/<repo>/`
 ## Data & privacy
 
 History is stored only in the browser’s **`localStorage`**. **Nothing is uploaded** to a server.
-
----
-
-## About this project
-
-### Motivation
-
-I wanted a browser-based Gomoku UI with a **Liquid Glass** feel: frosted glass, soft lighting, and clear functional zones on a dark canvas, bringing human vs AI, history replay, and pattern study into one view. With simple rules, pattern recognition, multiple difficulty levels, and game replay should feel like a single, smooth workflow—also a hands-on exercise in modern CSS and React state management.
-
-### AI implementation & references
-
-- **Easy**: Defends losing positions seriously, but plays more casually otherwise—sometimes unexpected. This mode includes move hints with highlights—good for newcomers or relaxed games.
-- **Normal**: Deeper and steadier than Easy, stickier on defense; no hints—you judge the position yourself; good for building intuition.
-- **Hard**: Explores multiple candidates to find the best reply; strongest overall and toughest to beat; no hints—for players who want a challenge. See `src/ai/engine.ts`; computation runs in a **Web Worker** to keep the UI responsive.
-
-For **deep reinforcement learning** Gomoku frameworks (MCTS, PPO, policy–value nets, etc.), the community project [guokezhen999/gomoku_rl](https://github.com/guokezhen999/gomoku_rl) (Python / PyTorch) is an independent reference from this repo’s front-end search stack.
-
-Classic **alpha-beta** Gomoku AI and tutorials: [lihongxun945/gobang](https://github.com/lihongxun945/gobang) (JavaScript; traditional search, no neural nets—useful for comparison).
-
-### Date
-
-April 11, 2026
-
-### Author
-
-石天宇 (Shi Tianyu)
-
-### Tools
-
-Cursor, DeepSeek
 
 ---
 
